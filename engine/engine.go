@@ -2,8 +2,10 @@ package engine
 
 import (
 	"bufio"
+	"db_engine/paths"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -21,13 +23,25 @@ func Put(path, key string, val []byte) error {
 		return fmt.Errorf("error getting stat of the file: %v", err)
 	}
 
-	if info.Size() > 4096 {
+	/*
+		Segmentation:
 
+		- When the file reaches threshold create a new segment file and
+		continue appending there. Make older segments immutable (frozen).
+
+	*/
+	if (info.Size() + int64(len(val))) > 4096 {
 		fileName := fmt.Sprintf("%d.log", time.Now().UnixMilli())
 
-		filePath := fmt.Sprintf("%s/%s", "/store/segments", fileName)
+		absPath := filepath.Join(paths.GetPath("store/segments"), fileName)
 
-		return Put(filePath, key, val)
+		err = os.Chmod(path, 0444)
+
+		if err != nil {
+			return fmt.Errorf("error making file read-only: %v", err)
+		}
+
+		return Put(absPath, key, val)
 	}
 
 	defer file.Close()
