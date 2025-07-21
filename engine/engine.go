@@ -5,13 +5,29 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 )
 
-func Put(key string, val []byte) error {
-	file, err := os.OpenFile("data.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+func Put(path, key string, val []byte) error {
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 
 	if err != nil {
 		return fmt.Errorf("error opening file: %v", err)
+	}
+
+	info, err := file.Stat()
+
+	if err != nil {
+		return fmt.Errorf("error getting stat of the file: %v", err)
+	}
+
+	if info.Size() > 4096 {
+
+		fileName := fmt.Sprintf("%d.log", time.Now().UnixMilli())
+
+		filePath := fmt.Sprintf("%s/%s", "/store/segments", fileName)
+
+		return Put(filePath, key, val)
 	}
 
 	defer file.Close()
@@ -29,8 +45,8 @@ func Put(key string, val []byte) error {
 	return nil
 }
 
-func Get(key string) (string, error) {
-	file, err := os.Open("data.log")
+func Get(path, key string) (string, error) {
+	file, err := os.Open(path)
 
 	if err != nil {
 		return "", fmt.Errorf("error opening file: %v", err)
@@ -60,14 +76,14 @@ func Get(key string) (string, error) {
 	return "", fmt.Errorf("key not found: %s", key)
 }
 
-func GetAll() (string, error) {
-	file, err := os.Open("data.log")
+func GetAll(path string) (string, error) {
+	file, err := os.Open(path)
 
 	if err != nil {
 		return "", fmt.Errorf("error opening file: %v", err)
 	}
 
-	info, err := os.Stat("data.log")
+	info, err := os.Stat(path)
 
 	if err != nil {
 		return "", fmt.Errorf("error opening file: %v", err)

@@ -7,11 +7,11 @@ import (
 	"strings"
 )
 
-func BuildHashIndex() (*map[int64]string, error) {
+func BuildHashIndex(path string) (*map[int64]string, error) {
 
 	var index map[int64]string = map[int64]string{}
 
-	file, err := os.Open("data.log")
+	file, err := os.Open(path)
 
 	if err != nil {
 		return nil, fmt.Errorf("error opening file: %v", err)
@@ -38,9 +38,9 @@ func BuildHashIndex() (*map[int64]string, error) {
 	return &index, nil
 }
 
-func GetByIndex(offset int64) (string, error) {
+func GetByIndex(path string, offset int64) (string, error) {
 
-	file, err := os.Open("data.log")
+	file, err := os.Open(path)
 
 	if err != nil {
 		return "", fmt.Errorf("error opening file: %v", err)
