@@ -7,20 +7,26 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
+
+	"github.com/google/uuid"
 )
 
-func Put(path, key string, val []byte) error {
-	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+var storage string = paths.GetPath("store/segments")
+
+var currentSegmentFile string = filepath.Join(storage, NewSegmentName())
+
+func Put(key string, val []byte) error {
+
+	file, err := os.OpenFile(currentSegmentFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 
 	if err != nil {
 		return fmt.Errorf("error opening file: %v", err)
 	}
 
-	info, err := file.Stat()
+	info, err := os.Stat(file.Name())
 
 	if err != nil {
-		return fmt.Errorf("error getting stat of the file: %v", err)
+		return fmt.Errorf("error stat file: %v", err)
 	}
 
 	/*
@@ -30,31 +36,31 @@ func Put(path, key string, val []byte) error {
 		continue appending there. Make older segments immutable (frozen).
 
 	*/
-	if (info.Size() + int64(len(val))) > 4096 {
-		fileName := fmt.Sprintf("%d.log", time.Now().UnixMilli())
+	if (info.Size() + int64(len(val))) >= 1024*100 {
+		newSegmentName := NewSegmentName()
 
-		absPath := filepath.Join(paths.GetPath("store/segments"), fileName)
+		absPath := filepath.Join(storage, newSegmentName)
 
-		err = os.Chmod(path, 0444)
+		err = os.Chmod(currentSegmentFile, 0444)
 
 		if err != nil {
 			return fmt.Errorf("error making file read-only: %v", err)
 		}
 
-		return Put(absPath, key, val)
+		currentSegmentFile = absPath
+
+		return Put(key, val)
 	}
 
 	defer file.Close()
 
 	bytes := []byte(key + "," + string(val) + "\n")
 
-	n, err := file.Write(bytes)
+	_, err = file.Write(bytes)
 
 	if err != nil {
 		return fmt.Errorf("error writing to file: %v", err)
 	}
-
-	fmt.Printf("%d bytes are written. \n", n)
 
 	return nil
 }
@@ -108,4 +114,8 @@ func GetAll(path string) (string, error) {
 	file.Read(bytes)
 
 	return string(bytes), nil
+}
+
+func NewSegmentName() string {
+	return fmt.Sprintf("%s.log", uuid.New().String())
 }
