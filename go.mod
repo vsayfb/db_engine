@@ -2,4 +2,4 @@ module db_engine
 
 go 1.24.5
 
-require github.com/google/uuid v1.6.0
+require github.com/gofrs/uuid v4.4.0+incompatible

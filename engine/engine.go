@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/google/uuid"
+	"github.com/gofrs/uuid"
 )
 
 var storage string = paths.GetPath("store/segments")
@@ -36,7 +36,7 @@ func Put(key string, val []byte) error {
 		continue appending there. Make older segments immutable (frozen).
 
 	*/
-	if (info.Size() + int64(len(val))) >= 1024*100 {
+	if (info.Size() + (int64(len(key)) + int64(len(val)))) >= THRESHOLD {
 		newSegmentName := NewSegmentName()
 
 		absPath := filepath.Join(storage, newSegmentName)
@@ -117,5 +117,12 @@ func GetAll(path string) (string, error) {
 }
 
 func NewSegmentName() string {
-	return fmt.Sprintf("%s.log", uuid.New().String())
+	u, err := uuid.NewV1()
+
+	if err != nil {
+		fmt.Println("Error generating UUID:", err)
+		return ""
+	}
+
+	return fmt.Sprintf("%s.log", u.String())
 }
