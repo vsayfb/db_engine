@@ -5,6 +5,7 @@ import (
 	"db_engine/paths"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -13,11 +14,11 @@ import (
 
 var storage string = paths.GetPath("store/segments")
 
-var currentSegmentFile string = filepath.Join(storage, NewSegmentName())
+var writableSegmentFile string = path.Join(storage, "write.log")
 
 func Put(key string, val []byte) error {
 
-	file, err := os.OpenFile(currentSegmentFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	file, err := os.OpenFile(writableSegmentFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 
 	if err != nil {
 		return fmt.Errorf("error opening file: %v", err)
@@ -33,21 +34,21 @@ func Put(key string, val []byte) error {
 		Segmentation:
 
 		- When the file reaches threshold create a new segment file and
-		continue appending there. Make older segments immutable (frozen).
+		continue appending there. Make the current writable segment file immutable (frozen).
 
 	*/
 	if (info.Size() + (int64(len(key)) + int64(len(val)))) >= THRESHOLD {
-		newSegmentName := NewSegmentName()
+		newSegmentName := filepath.Join(storage, NewSegmentName())
 
-		absPath := filepath.Join(storage, newSegmentName)
-
-		err = os.Chmod(currentSegmentFile, 0444)
+		err = os.Chmod(writableSegmentFile, 0444)
 
 		if err != nil {
 			return fmt.Errorf("error making file read-only: %v", err)
 		}
 
-		currentSegmentFile = absPath
+		if err := os.Rename(writableSegmentFile, newSegmentName); err != nil {
+			return fmt.Errorf("error renaming writable segment file: %v", err)
+		}
 
 		return Put(key, val)
 	}
