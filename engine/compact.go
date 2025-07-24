@@ -24,7 +24,13 @@ func CompactSegment() error {
 	source := filepath.Join("store", "segments")
 
 	entries, err := os.ReadDir(source)
+
 	if err != nil {
+		return fmt.Errorf("error reading directory /segments: %v", err)
+	}
+
+	if len(entries) <= 2 {
+		return nil
 	}
 
 	var segments []SegmentInfo
@@ -58,6 +64,11 @@ func CompactSegment() error {
 	pairs := make(map[string]string, 0)
 
 	for _, s := range segments {
+
+		// do not include writable segment file in process
+		if strings.Contains(s.Name, "write") {
+			continue
+		}
 
 		file, err := os.Open(path.Join(source, s.Name))
 
