@@ -33,7 +33,7 @@ func Put(key []byte, val []byte) (int64, error) {
 
 		info = stat
 
-		file.Close()
+		defer file.Close()
 	} else if err != nil {
 		return -1, fmt.Errorf("error stat file: %v", err)
 	} else if (info.Size() + (int64(len(key)) + int64(len(val)))) >= THRESHOLD {
