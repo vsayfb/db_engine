@@ -2,6 +2,7 @@ package segment
 
 import (
 	"db_engine/engine/disk"
+	"db_engine/engine/format"
 	"db_engine/paths"
 	"fmt"
 	"os"
@@ -11,9 +12,9 @@ import (
 
 var storage string = paths.GetPath("store/segments")
 
-var writableSegmentFile string = path.Join(storage, "write.log")
+var writableSegmentFile string = path.Join(storage, "write.bin")
 
-func Put(key string, val []byte) (int64, error) {
+func Put(key []byte, val []byte) (int64, error) {
 
 	info, err := os.Stat(writableSegmentFile)
 
@@ -49,7 +50,7 @@ func Put(key string, val []byte) (int64, error) {
 		return Put(key, val)
 	}
 
-	_, err = disk.AppendFile(writableSegmentFile, []byte(key+","+string(val)+"\n"))
+	_, err = disk.AppendFile(writableSegmentFile, format.FormatBinary(key, val))
 
 	if err != nil {
 		return -1, fmt.Errorf("error writing to disk: %v", err)
