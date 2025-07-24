@@ -1,4 +1,4 @@
-package engine
+package segment
 
 import (
 	"bufio"
@@ -10,8 +10,6 @@ import (
 	"strings"
 	"time"
 )
-
-const THRESHOLD = 1024 * 400
 
 type SegmentInfo struct {
 	Name      string
@@ -176,7 +174,7 @@ func mergeSegments(dir string, pairs map[string]string) error {
 		return fmt.Errorf("error closing temp file: %v", err)
 	}
 
-	newSegment := path.Join(dir, NewSegmentName())
+	newSegment := path.Join(dir, newSegmentFileName())
 
 	if err := os.Rename(tmpPath, newSegment); err != nil {
 		return fmt.Errorf("error renaming temp file: %v", err)
