@@ -25,6 +25,14 @@ func Put(key []byte, val []byte) (int64, error) {
 			return -1, fmt.Errorf("error creating new segment file: %v", err)
 		}
 
+		stat, err := file.Stat()
+
+		if err != nil {
+			return -1, fmt.Errorf("error getting stat of segment file: %v", err)
+		}
+
+		info = stat
+
 		file.Close()
 	} else if err != nil {
 		return -1, fmt.Errorf("error stat file: %v", err)
@@ -56,5 +64,5 @@ func Put(key []byte, val []byte) (int64, error) {
 		return -1, fmt.Errorf("error writing to disk: %v", err)
 	}
 
-	return info.Size() + 1, nil
+	return info.Size(), nil
 }
