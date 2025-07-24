@@ -2,4 +2,4 @@ module db_engine
 
 go 1.24.5
 
-require github.com/gofrs/uuid v4.4.0+incompatible
+require github.com/oklog/ulid/v2 v2.1.1

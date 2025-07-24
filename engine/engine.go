@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/gofrs/uuid"
+	"github.com/oklog/ulid/v2"
 )
 
 var storage string = paths.GetPath("store/segments")
@@ -117,12 +117,5 @@ func GetAll(path string) (string, error) {
 }
 
 func NewSegmentName() string {
-	u, err := uuid.NewV1()
-
-	if err != nil {
-		fmt.Println("Error generating UUID:", err)
-		return ""
-	}
-
-	return fmt.Sprintf("%s.log", u.String())
+	return ulid.Make().String() + ".log"
 }
