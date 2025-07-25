@@ -86,15 +86,22 @@ func (index *HashIndex) CreateIndexForSegment(path string) error {
 	return nil
 }
 
-func (index *HashIndex) GetOffsetOfKey(path, key string) int64 {
+func (index *HashIndex) GetOffsetOfKey(key string) (string, int64) {
 
-	val, exist := index.indexes[path][key]
+	path := ""
+	var offset int64 = -1
 
-	if !exist {
-		return -1
+	for s, pairs := range index.indexes {
+
+		for k, off := range pairs {
+			if k == key {
+				path = s
+				offset = off
+			}
+		}
 	}
 
-	return val
+	return path, int64(offset)
 }
 
 func (index *HashIndex) GetIndex() map[string]map[string]int64 {
