@@ -9,7 +9,7 @@ import (
 )
 
 type HashIndex struct {
-	indexes map[string]map[string]int64
+	indexes sync.Map // map[string]sync.Map -> segment => (key => offset)
 }
 
 var instance *HashIndex
@@ -17,21 +17,31 @@ var once sync.Once
 
 func NewHashIndex() *HashIndex {
 	once.Do(func() {
-		instance = &HashIndex{indexes: make(map[string]map[string]int64)}
+		instance = &HashIndex{}
 	})
-
 	return instance
 }
 
-func (index *HashIndex) IndexKey(segment, key string, offset int64) {
-	index.indexes[segment][key] = offset
+func (hi *HashIndex) IndexKey(segment, key string, offset int64) {
+
+	val, _ := hi.indexes.LoadOrStore(segment, &sync.Map{})
+
+	segmentMap := val.(*sync.Map)
+
+	segmentMap.Store(key, offset)
 }
 
-func (index *HashIndex) GetIndexOfSegment(key string) map[string]int64 {
-	return index.indexes[key]
+func (hi *HashIndex) GetIndexOfSegment(segment string) *sync.Map {
+	val, ok := hi.indexes.Load(segment)
+
+	if !ok {
+		return nil
+	}
+
+	return val.(*sync.Map)
 }
 
-func (index *HashIndex) CreateIndexForSegment(path string) error {
+func (hi *HashIndex) CreateIndexForSegment(path string) error {
 	file, err := os.Open(path)
 
 	if err != nil {
@@ -43,12 +53,14 @@ func (index *HashIndex) CreateIndexForSegment(path string) error {
 	var offset int64 = 0
 	const headerSize int64 = 8
 
+	val, _ := hi.indexes.LoadOrStore(path, &sync.Map{})
+	segmentMap := val.(*sync.Map)
+
 	for {
 		keyLenBuf := make([]byte, 4)
 		valLenBuf := make([]byte, 4)
 
 		_, err := file.ReadAt(keyLenBuf, offset)
-
 		if err != nil {
 			if err == io.EOF {
 				break
@@ -57,7 +69,6 @@ func (index *HashIndex) CreateIndexForSegment(path string) error {
 		}
 
 		_, err = file.ReadAt(valLenBuf, offset+4)
-
 		if err != nil {
 			return fmt.Errorf("error reading value length: %v", err)
 		}
@@ -66,19 +77,12 @@ func (index *HashIndex) CreateIndexForSegment(path string) error {
 		valLen := binary.BigEndian.Uint32(valLenBuf)
 
 		key := make([]byte, keyLen)
-		val := make([]byte, valLen)
-
 		_, err = file.ReadAt(key, offset+headerSize)
 		if err != nil {
 			return fmt.Errorf("error reading key: %v", err)
 		}
 
-		_, err = file.ReadAt(val, offset+headerSize+int64(keyLen))
-		if err != nil {
-			return fmt.Errorf("error reading value: %v", err)
-		}
-
-		index.IndexKey(path, string(key), offset)
+		segmentMap.Store(string(key), offset)
 
 		offset += headerSize + int64(keyLen) + int64(valLen)
 	}
@@ -86,24 +90,43 @@ func (index *HashIndex) CreateIndexForSegment(path string) error {
 	return nil
 }
 
-func (index *HashIndex) GetOffsetOfKey(key string) (string, int64) {
+func (hi *HashIndex) GetOffsetOfData(key string) (string, int64) {
+	var foundPath string
+	var foundOffset int64 = -1
 
-	path := ""
-	var offset int64 = -1
+	hi.indexes.Range(func(segKey, segVal any) bool {
+		segment := segKey.(string)
+		segmentMap := segVal.(*sync.Map)
 
-	for s, pairs := range index.indexes {
-
-		for k, off := range pairs {
-			if k == key {
-				path = s
-				offset = off
-			}
+		if offsetAny, ok := segmentMap.Load(key); ok {
+			foundPath = segment
+			foundOffset = offsetAny.(int64)
+			return false
 		}
-	}
+		return true
+	})
 
-	return path, int64(offset)
+	return foundPath, foundOffset
 }
 
-func (index *HashIndex) GetIndex() map[string]map[string]int64 {
-	return index.indexes
+func (hi *HashIndex) Dump() map[string]map[string]int64 {
+	result := make(map[string]map[string]int64)
+
+	hi.indexes.Range(func(segKey, segVal any) bool {
+		segment := segKey.(string)
+		segmentMap := segVal.(*sync.Map)
+
+		inner := make(map[string]int64)
+
+		segmentMap.Range(func(k, v any) bool {
+			inner[k.(string)] = v.(int64)
+			return true
+		})
+
+		result[segment] = inner
+
+		return true
+	})
+
+	return result
 }

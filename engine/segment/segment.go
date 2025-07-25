@@ -79,7 +79,7 @@ func Put(key []byte, val []byte) (int64, error) {
 
 func GetValueByKey(key []byte) ([]byte, error) {
 
-	filepath, offset := hashindex.NewHashIndex().GetOffsetOfKey(string(key))
+	filepath, offset := hashindex.NewHashIndex().GetOffsetOfData(string(key))
 
 	if offset != -1 {
 		return nil, fmt.Errorf("value not found by key: %s", key)
@@ -88,7 +88,7 @@ func GetValueByKey(key []byte) ([]byte, error) {
 	file, err := os.Open(filepath)
 
 	if err != nil {
-		return nil, fmt.Errorf("error opening file: ", err)
+		return nil, fmt.Errorf("error opening file: %v", err)
 	}
 
 	defer file.Close()
@@ -98,17 +98,17 @@ func GetValueByKey(key []byte) ([]byte, error) {
 	_, err = file.ReadAt(valueLen, offset+4)
 
 	if err != nil {
-		return nil, fmt.Errorf("error reading file: ", err)
+		return nil, fmt.Errorf("error reading file: %v", err)
 	}
 
 	valueLenInt := binary.BigEndian.Uint32(valueLen)
 
 	value := make([]byte, valueLenInt)
 
-	_, err = file.ReadAt(value, offset+8+len(key))
+	_, err = file.ReadAt(value, offset+8+int64(len(key)))
 
 	if err != nil {
-		return nil, fmt.Errorf("error reading file: ", err)
+		return nil, fmt.Errorf("error reading file: %v", err)
 	}
 
 	return value, nil
