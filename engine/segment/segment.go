@@ -5,6 +5,7 @@ import (
 	"db_engine/engine/format"
 	hashindex "db_engine/engine/hash_index"
 	"db_engine/paths"
+	"encoding/binary"
 	"fmt"
 	"os"
 	"path"
@@ -74,4 +75,41 @@ func Put(key []byte, val []byte) (int64, error) {
 	hashindex.NewHashIndex().IndexKey(writableSegmentFile, string(key), int64(offset))
 
 	return info.Size(), nil
+}
+
+func GetValueByKey(key []byte) ([]byte, error) {
+
+	filepath, offset := hashindex.NewHashIndex().GetOffsetOfKey(string(key))
+
+	if offset != -1 {
+		return nil, fmt.Errorf("value not found by key: %s", key)
+	}
+
+	file, err := os.Open(filepath)
+
+	if err != nil {
+		return nil, fmt.Errorf("error opening file: ", err)
+	}
+
+	defer file.Close()
+
+	valueLen := make([]byte, 4)
+
+	_, err = file.ReadAt(valueLen, offset+4)
+
+	if err != nil {
+		return nil, fmt.Errorf("error reading file: ", err)
+	}
+
+	valueLenInt := binary.BigEndian.Uint32(valueLen)
+
+	value := make([]byte, valueLenInt)
+
+	_, err = file.ReadAt(value, offset+8+len(key))
+
+	if err != nil {
+		return nil, fmt.Errorf("error reading file: ", err)
+	}
+
+	return value, nil
 }
