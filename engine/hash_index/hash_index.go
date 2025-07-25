@@ -5,14 +5,26 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 )
 
 type HashIndex struct {
 	indexes map[string]map[string]int64
 }
 
+var instance *HashIndex
+var once sync.Once
+
 func NewHashIndex() *HashIndex {
-	return &HashIndex{indexes: make(map[string]map[string]int64)}
+	once.Do(func() {
+		instance = &HashIndex{indexes: make(map[string]map[string]int64)}
+	})
+
+	return instance
+}
+
+func (index *HashIndex) IndexKey(segment, key string, offset int64) {
+	index.indexes[segment][key] = offset
 }
 
 func (index *HashIndex) GetIndexOfSegment(key string) map[string]int64 {
