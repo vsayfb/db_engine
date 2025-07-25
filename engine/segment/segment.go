@@ -3,6 +3,7 @@ package segment
 import (
 	"db_engine/engine/disk"
 	"db_engine/engine/format"
+	hashindex "db_engine/engine/hash_index"
 	"db_engine/paths"
 	"fmt"
 	"os"
@@ -63,6 +64,14 @@ func Put(key []byte, val []byte) (int64, error) {
 	if err != nil {
 		return -1, fmt.Errorf("error writing to disk: %v", err)
 	}
+
+	offset := 0
+
+	if info.Size() != 0 {
+		offset = int(info.Size()) + 1
+	}
+
+	hashindex.NewHashIndex().IndexKey(writableSegmentFile, string(key), int64(offset))
 
 	return info.Size(), nil
 }
