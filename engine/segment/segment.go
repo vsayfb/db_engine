@@ -60,7 +60,7 @@ func Put(key []byte, val []byte) (int64, error) {
 		return Put(key, val)
 	}
 
-	_, err = disk.AppendFile(writableSegmentFile, format.FormatBinary(key, val))
+	_, err = disk.AppendFile(writableSegmentFile, format.EncodeBinary(key, val))
 
 	if err != nil {
 		return -1, fmt.Errorf("error writing to disk: %v", err)

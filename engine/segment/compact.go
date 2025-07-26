@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"db_engine/engine/format"
 	hashindex "db_engine/engine/hash_index"
-	"encoding/binary"
 	"fmt"
 	"io"
 	"os"
@@ -62,49 +61,29 @@ func CompactSegment() error {
 
 	for _, seg := range segments {
 		file, err := os.Open(seg.Path)
+
 		if err != nil {
 			return fmt.Errorf("error opening segment %s: %v", seg.Name, err)
 		}
 
 		offset := int64(0)
+
 		for {
-			keyLenBuf := make([]byte, 4)
-			valLenBuf := make([]byte, 4)
 
-			_, err := file.ReadAt(keyLenBuf, offset)
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				file.Close()
-				return fmt.Errorf("error reading key length: %v", err)
-			}
-			_, err = file.ReadAt(valLenBuf, offset+4)
-			if err != nil {
-				file.Close()
-				return fmt.Errorf("error reading val length: %v", err)
-			}
+			key, val, nextOffset, err := format.DecodeBinary(file, offset)
 
-			keyLen := binary.BigEndian.Uint32(keyLenBuf)
-			valLen := binary.BigEndian.Uint32(valLenBuf)
-
-			key := make([]byte, keyLen)
-			val := make([]byte, valLen)
-
-			_, err = file.ReadAt(key, offset+8)
 			if err != nil {
-				file.Close()
-				return fmt.Errorf("error reading key: %v", err)
-			}
-			_, err = file.ReadAt(val, offset+8+int64(keyLen))
-			if err != nil {
-				file.Close()
-				return fmt.Errorf("error reading value: %v", err)
+
+				if err == io.EOF {
+					break
+				}
+
+				return err
 			}
 
 			latest[string(key)] = val
 
-			offset += int64(8 + keyLen + valLen)
+			offset = nextOffset
 		}
 
 		file.Close()
@@ -166,7 +145,7 @@ func mergeSegments(dir string, pairs map[string][]byte) error {
 	writer := bufio.NewWriter(tmpFile)
 
 	for k, v := range pairs {
-		if _, err := writer.Write(format.FormatBinary([]byte(k), v)); err != nil {
+		if _, err := writer.Write(format.EncodeBinary([]byte(k), v)); err != nil {
 			os.Remove(tmpPath)
 			return fmt.Errorf("error writing to temp file: %v", err)
 		}
