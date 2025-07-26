@@ -2,7 +2,11 @@ package segment
 
 import (
 	"bufio"
+	"db_engine/engine/format"
+	hashindex "db_engine/engine/hash_index"
+	"encoding/binary"
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
@@ -22,25 +26,21 @@ func CompactSegment() error {
 	source := filepath.Join("store", "segments")
 
 	entries, err := os.ReadDir(source)
-
 	if err != nil {
 		return fmt.Errorf("error reading directory /segments: %v", err)
 	}
-
 	if len(entries) <= 2 {
 		return nil
 	}
 
 	var segments []SegmentInfo
-
 	for _, entry := range entries {
-		if entry.IsDir() {
+		if entry.IsDir() || strings.Contains(entry.Name(), "write") {
 			continue
 		}
 
 		fullPath := filepath.Join(source, entry.Name())
-
-		fileInfo, err := os.Stat(fullPath)
+		info, err := os.Stat(fullPath)
 		if err != nil {
 			return fmt.Errorf("error getting file stat: %v", err)
 		}
@@ -48,99 +48,106 @@ func CompactSegment() error {
 		segments = append(segments, SegmentInfo{
 			Name:      entry.Name(),
 			Path:      fullPath,
-			CreatedAt: fileInfo.ModTime(),
+			CreatedAt: info.ModTime(),
 		})
 	}
 
-	// sort segments oldest to newest to keep most recent value for each key
+	// Sort oldest to newest (newest overwrites oldest)
 	sort.Slice(segments, func(i, j int) bool {
 		return segments[i].CreatedAt.Before(segments[j].CreatedAt)
 	})
 
-	var written int
-	readSegments := make([]string, 0)
-	pairs := make(map[string]string, 0)
+	latest := make(map[string][]byte)
+	var readSegments []string
 
-	for _, s := range segments {
-
-		// do not include writable segment file in process
-		if strings.Contains(s.Name, "write") {
-			continue
-		}
-
-		file, err := os.Open(path.Join(source, s.Name))
-
+	for _, seg := range segments {
+		file, err := os.Open(seg.Path)
 		if err != nil {
-			return fmt.Errorf("error opening segment %s: %v", s.Name, err)
+			return fmt.Errorf("error opening segment %s: %v", seg.Name, err)
 		}
 
-		scanner := bufio.NewScanner(file)
+		offset := int64(0)
+		for {
+			keyLenBuf := make([]byte, 4)
+			valLenBuf := make([]byte, 4)
 
-		for scanner.Scan() {
-
-			line := scanner.Text()
-
-			parts := strings.SplitN(line, ",", 2)
-
-			if len(parts) != 2 {
-				continue
+			_, err := file.ReadAt(keyLenBuf, offset)
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				file.Close()
+				return fmt.Errorf("error reading key length: %v", err)
+			}
+			_, err = file.ReadAt(valLenBuf, offset+4)
+			if err != nil {
+				file.Close()
+				return fmt.Errorf("error reading val length: %v", err)
 			}
 
-			key, value := parts[0], parts[1]
+			keyLen := binary.BigEndian.Uint32(keyLenBuf)
+			valLen := binary.BigEndian.Uint32(valLenBuf)
 
-			// discard the length of bytes in older pairs
-			if existing, exists := pairs[key]; exists {
-				written -= len(key) + len(existing)
+			key := make([]byte, keyLen)
+			val := make([]byte, valLen)
+
+			_, err = file.ReadAt(key, offset+8)
+			if err != nil {
+				file.Close()
+				return fmt.Errorf("error reading key: %v", err)
+			}
+			_, err = file.ReadAt(val, offset+8+int64(keyLen))
+			if err != nil {
+				file.Close()
+				return fmt.Errorf("error reading value: %v", err)
 			}
 
-			pairs[key] = value
+			latest[string(key)] = val
 
-			written += len(line)
-
-			if written >= THRESHOLD {
-
-				if err := mergeSegments(source, pairs); err != nil {
-
-					file.Close()
-
-					return err
-				}
-
-				written = 0
-			}
+			offset += int64(8 + keyLen + valLen)
 		}
-
-		if err := scanner.Err(); err != nil {
-			file.Close()
-			return fmt.Errorf("error reading segment %s: %v", s.Name, err)
-		}
-
-		readSegments = append(readSegments, path.Join(source, s.Name))
 
 		file.Close()
-
+		readSegments = append(readSegments, seg.Path)
 	}
 
-	// merge remaining segments
-	if written > 0 {
-		if err := mergeSegments(source, pairs); err != nil {
-			return fmt.Errorf("error merging remaining segments %v", err)
+	// Write latest key-values into new segments
+	buffer := make(map[string][]byte)
+	var bufferSize int
+
+	for k, v := range latest {
+		size := 8 + len(k) + len(v)
+		if bufferSize+size >= THRESHOLD {
+			if err := mergeSegments(source, buffer); err != nil {
+				return fmt.Errorf("error writing segment: %v", err)
+			}
+			buffer = make(map[string][]byte)
+			bufferSize = 0
+		}
+		buffer[k] = v
+		bufferSize += size
+	}
+
+	if bufferSize > 0 {
+		if err := mergeSegments(source, buffer); err != nil {
+			return fmt.Errorf("error writing remaining segment: %v", err)
 		}
 	}
 
 	if err := cleanUp(readSegments); err != nil {
-		return fmt.Errorf("error during segment clean up %v", err)
+		return fmt.Errorf("cleanup error: %v", err)
 	}
 
 	return nil
 }
 
-func mergeSegments(dir string, pairs map[string]string) error {
+func mergeSegments(dir string, pairs map[string][]byte) error {
+
 	if len(pairs) == 0 {
 		return nil
 	}
 
-	tmpFile, err := os.CreateTemp(dir, "compact.*.tmp")
+	tmpFile, err := os.CreateTemp(dir, "compact.*.bin")
 
 	if err != nil {
 		return fmt.Errorf("error creating temp file: %v", err)
@@ -159,25 +166,36 @@ func mergeSegments(dir string, pairs map[string]string) error {
 	writer := bufio.NewWriter(tmpFile)
 
 	for k, v := range pairs {
-		if _, err := writer.WriteString(k + "," + v + "\n"); err != nil {
+		if _, err := writer.Write(format.FormatBinary([]byte(k), v)); err != nil {
+			os.Remove(tmpPath)
 			return fmt.Errorf("error writing to temp file: %v", err)
 		}
 	}
 
 	if err := writer.Flush(); err != nil {
+		os.Remove(tmpPath)
 		return fmt.Errorf("error flushing writer: %v", err)
 	}
 	if err := tmpFile.Sync(); err != nil {
+		os.Remove(tmpPath)
 		return fmt.Errorf("error syncing file: %v", err)
 	}
 	if err := tmpFile.Close(); err != nil {
+		os.Remove(tmpPath)
 		return fmt.Errorf("error closing temp file: %v", err)
 	}
 
 	newSegment := path.Join(dir, newSegmentFileName())
 
 	if err := os.Rename(tmpPath, newSegment); err != nil {
+		os.Remove(tmpPath)
 		return fmt.Errorf("error renaming temp file: %v", err)
+	}
+
+	if err := hashindex.NewHashIndex().CreateIndexForSegment(newSegment); err != nil {
+		os.Remove(tmpPath)
+		os.Remove(newSegment)
+		return fmt.Errorf("error creating index for segment: %v", err)
 	}
 
 	return nil
