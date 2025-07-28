@@ -32,20 +32,39 @@ func New() *Block {
 	}
 }
 
-func (block *Block) addToBlock(data []byte) {
+func (block *Block) AddToBlock(data []byte) {
 	block.buffer = append(block.buffer, data...)
 
 	block.size += len(data)
 }
 
-func (block *Block) getBlock() []byte {
+func (block *Block) GetBlock() []byte {
 	return block.buffer
 }
 
-func (block *Block) getSize() int {
+func (block *Block) GetSize() int {
 	return block.size
 }
 
-func (block *Block) getThreshold() int {
-	return 1024 * 4
+func (block *Block) GetThreshold() int {
+	return 1024 * 16
+}
+
+func (block *Block) IsEmpty() bool {
+	return block.size == 0
+}
+
+func (block *Block) SetFirstKey(key []byte) {
+	block.firstKey = key
+}
+
+func (block *Block) SetOffset(offset int64) {
+	block.offset = offset
+}
+
+func (block *Block) Reset() {
+	block.buffer = make([]byte, 0)
+	block.firstKey = make([]byte, 0)
+	block.size = 0
+	block.offset = 0
 }

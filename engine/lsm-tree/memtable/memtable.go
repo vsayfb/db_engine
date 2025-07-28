@@ -1,8 +1,10 @@
 package memtable
 
 import (
+	"bufio"
 	"bytes"
 	"db_engine/engine/format"
+	"db_engine/engine/lsm-tree/block"
 	"db_engine/paths"
 	"fmt"
 	"os"
@@ -70,24 +72,57 @@ func (memtable *Memtable) flushDisk() error {
 
 	path := filepath.Join(paths.GetPath("store/sstable"), newSortableFileName())
 
-	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY|os.O_TRUNC, 0644)
 
 	if err != nil {
 		os.Remove(path)
 		return fmt.Errorf("error creating file: %v", err)
 	}
 
+	writer := bufio.NewWriter(file)
+
 	defer file.Close()
+
+	block := block.New()
+
+	offset := int64(0)
 
 	for it.Next() {
 
-		data := format.EncodeBinary(it.Key().([]byte), it.Value().([]byte))
+		key := it.Key().([]byte)
+		value := it.Value().([]byte)
+		data := format.EncodeBinary(key, value)
 
-		_, err := file.Write(data)
+		if block.IsEmpty() {
+			block.SetFirstKey(key)
+		}
+
+		block.AddToBlock(data)
+
+		if block.GetSize() >= block.GetThreshold() {
+			n, err := writer.Write(block.GetBlock())
+
+			if err != nil {
+				return fmt.Errorf("error writing block: %v", err)
+			}
+
+			block.Reset()
+			offset += int64(n)
+			block.SetOffset(offset)
+		}
+	}
+
+	// write final block
+	if block.GetSize() > 0 {
+		n, err := writer.Write(block.GetBlock())
 
 		if err != nil {
-			return fmt.Errorf("error writing data to disk: %v", err)
+			return fmt.Errorf("error writing final block: %v", err)
 		}
+
+		block.Reset()
+		offset += int64(n)
+		block.SetOffset(offset)
 	}
 
 	return nil
