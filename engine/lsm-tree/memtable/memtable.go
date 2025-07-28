@@ -39,26 +39,22 @@ func GetInstance() *Memtable {
 
 func (memtable *Memtable) Put(key, val []byte) error {
 
-	bytes := len(key) + len(val)
+	oldVal, found := memtable.tree.Get(key)
 
-	if (memtable.SizeBytes() + bytes) >= THRESHOLD {
+	if found {
+		memtable.totalBytes -= (len(key) + len(oldVal.([]byte)))
+	}
+
+	memtable.tree.Put(key, val)
+	memtable.totalBytes += (len(key) + len(val))
+
+	if memtable.SizeBytes() >= THRESHOLD {
 		if err := memtable.flushDisk(); err != nil {
 			return err
 		}
 
 		memtable.totalBytes = 0
-	}
-
-	memtable.tree = redblacktree.NewWith(byteComparator)
-
-	oldVal, found := memtable.tree.Get(key)
-
-	memtable.tree.Put(key, val)
-
-	memtable.totalBytes += (len(key) + len(val))
-
-	if found {
-		memtable.totalBytes -= (len(key) + len(oldVal.([]byte)))
+		memtable.tree = redblacktree.NewWith(byteComparator)
 	}
 
 	return nil
@@ -70,11 +66,9 @@ func (memtable *Memtable) SizeBytes() int {
 
 func (memtable *Memtable) flushDisk() error {
 
-	it := memtable.tree.Iterator()
-
 	path := filepath.Join(paths.GetPath("store/sstable"), newSortableFileName())
 
-	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY|os.O_TRUNC, 0644)
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
 
 	if err != nil {
 		os.Remove(path)
@@ -88,10 +82,12 @@ func (memtable *Memtable) flushDisk() error {
 	offset := int64(0)
 	indexBlock := index.New(writer)
 
-	for it.Next() {
+	it := memtable.tree.Iterator()
 
+	for it.Next() {
 		key := it.Key().([]byte)
 		value := it.Value().([]byte)
+
 		data := format.EncodeBinary(key, value)
 
 		if block.IsEmpty() {
