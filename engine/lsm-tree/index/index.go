@@ -2,6 +2,7 @@ package index
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/binary"
 	"fmt"
 )
@@ -42,4 +43,27 @@ func (indexBlock *IndexBlock) AppendBlockIntoFile() error {
 	}
 
 	return nil
+}
+
+func (block *IndexBlock) Search(key []byte) (bool, int64) {
+	lo, hi := 0, len(block.indexes)-1
+
+	for lo <= hi {
+		mid := (lo + hi) / 2
+		cmp := bytes.Compare(block.indexes[mid].Key, key)
+
+		if cmp == 0 {
+			return true, block.indexes[mid].Offset
+		} else if cmp < 0 {
+			lo = mid + 1
+		} else {
+			hi = mid - 1
+		}
+	}
+
+	if hi >= 0 {
+		return false, block.indexes[hi].Offset
+	}
+
+	return false, -1
 }
