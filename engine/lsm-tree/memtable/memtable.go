@@ -97,7 +97,7 @@ func (memtable *Memtable) flushDisk() error {
 			block.SetFirstKey(key)
 		}
 
-		block.AddToBlock(data)
+		block.Append(data)
 
 		if block.GetSize() >= block.GetThreshold() {
 			n, err := writer.Write(block.GetBlock())

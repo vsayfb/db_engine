@@ -32,7 +32,7 @@ func New() *Block {
 	}
 }
 
-func (block *Block) AddToBlock(data []byte) {
+func (block *Block) Append(data []byte) {
 	block.buffer = append(block.buffer, data...)
 
 	block.size += len(data)
@@ -44,6 +44,10 @@ func (block *Block) GetBlock() []byte {
 
 func (block *Block) GetSize() int {
 	return block.size
+}
+
+func (block *Block) GetFirstKey() []byte {
+	return block.firstKey
 }
 
 func (block *Block) GetThreshold() int {
