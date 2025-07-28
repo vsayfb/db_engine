@@ -7,6 +7,7 @@ import (
 	"db_engine/engine/lsm-tree/block"
 	"db_engine/engine/lsm-tree/index"
 	"db_engine/paths"
+	"encoding/binary"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -80,14 +81,11 @@ func (memtable *Memtable) flushDisk() error {
 		return fmt.Errorf("error creating file: %v", err)
 	}
 
-	writer := bufio.NewWriter(file)
-
 	defer file.Close()
 
+	writer := bufio.NewWriter(file)
 	block := block.New()
-
 	offset := int64(0)
-
 	indexBlock := index.New(writer)
 
 	for it.Next() {
@@ -117,8 +115,10 @@ func (memtable *Memtable) flushDisk() error {
 		}
 	}
 
+	indexBlockOffset := offset
+
 	// write final block
-	if block.GetSize() > 0 {
+	if !block.IsEmpty() {
 		n, err := writer.Write(block.GetBlock())
 
 		if err != nil {
@@ -134,6 +134,15 @@ func (memtable *Memtable) flushDisk() error {
 
 	if err := indexBlock.AppendBlockIntoFile(); err != nil {
 		return fmt.Errorf("error appending index block into file: %v", err)
+	}
+
+	// a pointer holds the beginning offset of the index block
+	if err := binary.Write(writer, binary.BigEndian, indexBlockOffset); err != nil {
+		return fmt.Errorf("error writing footer block: %v", err)
+	}
+
+	if err := writer.Flush(); err != nil {
+		return fmt.Errorf("error flushing to disk: %v", err)
 	}
 
 	return nil
