@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"db_engine/engine/format"
 	"db_engine/engine/lsm-tree/block"
+	"db_engine/engine/lsm-tree/index"
 	"db_engine/paths"
 	"fmt"
 	"os"
@@ -87,6 +88,8 @@ func (memtable *Memtable) flushDisk() error {
 
 	offset := int64(0)
 
+	indexBlock := index.New(writer)
+
 	for it.Next() {
 
 		key := it.Key().([]byte)
@@ -106,6 +109,8 @@ func (memtable *Memtable) flushDisk() error {
 				return fmt.Errorf("error writing block: %v", err)
 			}
 
+			indexBlock.Append(index.Index{Key: block.GetFirstKey(), Offset: offset})
+
 			block.Reset()
 			offset += int64(n)
 			block.SetOffset(offset)
@@ -120,9 +125,15 @@ func (memtable *Memtable) flushDisk() error {
 			return fmt.Errorf("error writing final block: %v", err)
 		}
 
+		indexBlock.Append(index.Index{Key: block.GetFirstKey(), Offset: offset})
+
 		block.Reset()
 		offset += int64(n)
 		block.SetOffset(offset)
+	}
+
+	if err := indexBlock.AppendBlockIntoFile(); err != nil {
+		return fmt.Errorf("error appending index block into file: %v", err)
 	}
 
 	return nil
